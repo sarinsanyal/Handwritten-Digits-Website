@@ -37,7 +37,7 @@ model = MNISTCNN()
 model.load_state_dict(torch.load("mnist_cnn.pth", map_location=device))
 model.eval()
 
-# 3. Real-Time Vanilla HTML/JS Drawing Interface
+# 3. Real-Time Dynamic Sorting Interface
 HTML_PAGE = """
 <!DOCTYPE html>
 <html>
@@ -58,7 +58,7 @@ HTML_PAGE = """
     </style>
 </head>
 <body>
-    <h1>MNIST Live Canvas Classifier</h1>
+    <h1>MNIST Live Sorting Classifier</h1>
     <div class="wrapper">
         <div>
             <canvas id="paintCanvas" width="280" height="280"></canvas>
@@ -90,13 +90,13 @@ HTML_PAGE = """
         canvas.addEventListener('mousemove', (e) => {
             paint(e);
             if (drawing) {
-                livePredict(); // Triggers dynamically as you draw
+                livePredict();
             }
         });
         canvas.addEventListener('mouseup', () => { 
             drawing = false; 
             ctx.beginPath(); 
-            sendToBackend(); // Run one final prediction on release
+            sendToBackend(); 
         });
         canvas.addEventListener('mouseleave', () => { drawing = false; ctx.beginPath(); });
 
@@ -112,31 +112,28 @@ HTML_PAGE = """
         function resetCanvas() {
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-            // Reset all bars back to 0
-            for(let i=0; i<10; i++) {
-                const bar = document.getElementById(`bar-${i}`);
-                const pct = document.getElementById(`pct-${i}`);
-                if (bar && pct) {
-                    bar.style.width = '0%';
-                    pct.innerText = '0.0%';
-                }
-            }
+            
+            // Build default sorted 0-9 placeholder array
+            const defaultProbs = Array(10).fill(0).map((_, idx) => ({ digit: idx, prob: 0 }));
+            renderBars(defaultProbs);
         }
 
-        function buildEmptyBars() {
+        // Re-renders the entire DOM block based on whatever sorted list it receives
+        function renderBars(items) {
             const container = document.getElementById('bars-container');
             container.innerHTML = '';
-            for(let i=0; i<10; i++) {
+            
+            items.forEach(item => {
+                const percentage = (item.prob * 100).toFixed(1);
                 container.innerHTML += `
                     <div class="row">
-                        <span class="num">${i}</span>
-                        <div class="track"><div class="fill" id="bar-${i}"></div></div>
-                        <span class="pct" id="pct-${i}">0.0%</span>
+                        <span class="num">${item.digit}</span>
+                        <div class="track"><div class="fill" style="width: ${percentage}%"></div></div>
+                        <span class="pct">${percentage}%</span>
                     </div>`;
-            }
+            });
         }
 
-        // Throttle requests using requestAnimationFrame to protect server performance
         function livePredict() {
             if (isThrottled) return;
             isThrottled = true;
@@ -157,18 +154,24 @@ HTML_PAGE = """
                 });
                 const result = await response.json();
                 
-                // Update percentage bars smoothly
-                result.probabilities.forEach((prob, index) => {
-                    const percentage = (prob * 100).toFixed(1);
-                    document.getElementById(`bar-${index}`).style.width = percentage + '%';
-                    document.getElementById(`pct-${index}`).innerText = percentage + '%';
-                });
+                // 1. Structure the flat data array into objects containing metadata labels
+                let items = result.probabilities.map((p, idx) => ({
+                    digit: idx,
+                    prob: p
+                }));
+                
+                // 2. Sort the array from highest probability to lowest
+                items.sort((a, b) => b.prob - a.prob);
+                
+                // 3. Render the newly sorted order down the UI container
+                renderBars(items);
+                
             } catch (err) {
                 console.error("Prediction error:", err);
             }
         }
         
-        window.onload = buildEmptyBars;
+        window.onload = resetCanvas;
     </script>
 </body>
 </html>
